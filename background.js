@@ -60,6 +60,24 @@
     return str.replace(/[/\\:*?"<>|]/g, '_');
   }
 
+  /**
+   * Derive a file extension from a media URL.
+   * Falls back to a sensible default based on media type.
+   */
+  function mediaExt(url, type) {
+    try {
+      const u = new URL(url);
+      // Images: pbs.twimg.com uses ?format=jpg|png|webp
+      const fmt = u.searchParams.get('format');
+      if (fmt) return fmt;
+      // Videos: last path segment often ends in .mp4
+      const seg = u.pathname.split('/').pop();
+      const dot = seg.lastIndexOf('.');
+      if (dot !== -1) return seg.slice(dot + 1);
+    } catch (_) { /* fall through */ }
+    return type === 'video' ? 'mp4' : 'jpg';
+  }
+
   // ── Download orchestration ─────────────────────────────────────────────────
 
   /**
@@ -73,7 +91,13 @@
 
   /**
    * Download all media files referenced in the tweet list.
-   * Each file is named: {tweet_timestamp}_{original_filename}
+   *
+   * Filename format: {tweet_timestamp}_{author}_{index}.{ext}
+   * Example: "2024-06-04_09-15-30_username_1.jpg"
+   *
+   * Note: Twitter strips original filenames on upload — they are gone by the
+   * time media reaches the CDN. This scheme uses all the meaningful info we
+   * actually have: when the tweet was posted, who posted it, and the media type.
    *
    * Media downloads are fire-and-forget — we don't block the JSON download
    * on them, and individual failures are caught and logged without aborting
@@ -85,18 +109,21 @@
     for (const tweet of tweets) {
       if (!tweet.media || tweet.media.length === 0) continue;
 
-      for (const item of tweet.media) {
-        // Skip thumbnails — we already have the video itself
-        if (item.type === 'thumbnail') continue;
+      // Skip poster thumbnails when we already have the actual video
+      const mediaItems = tweet.media.filter((m) => m.type !== 'thumbnail');
 
-        const filename = safeFilename(`${tweet.id}_${item.filename}`);
+      mediaItems.forEach((item) => {
+        // Use item.filename verbatim — it's already "{tweet_id}_{media_key}.{ext}"
+        // and matches exactly what's recorded in the JSON.
+        const filename = safeFilename(item.filename);
+
         tasks.push(
           downloadFile(item.url, filename)
             .catch((err) => {
               console.warn(`[TweetScraper] Failed to download media: ${item.url}`, err);
             })
         );
-      }
+      });
     }
 
     await Promise.allSettled(tasks);
