@@ -26,12 +26,7 @@
    * The caller is responsible for revoking the URL after use.
    */
   function tweetsToObjectUrl(tweets) {
-    const payload = {
-      downloaded_at: new Date().toISOString(),
-      tweets_count: tweets.length,
-      tweets,
-    };
-    const json = JSON.stringify(payload, null, 2);
+    const json = JSON.stringify(tweets, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     return URL.createObjectURL(blob);
   }
